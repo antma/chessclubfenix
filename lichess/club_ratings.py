@@ -7,7 +7,9 @@ import csv
 #Chess Club Phoenix
 TEAM='mXKFB7l2'
 NB=50
+#VARIANT - comma separated list (antichess,atomic,blitz,bullet,chess960,classical,correspondence,crazyhouse,horde,kingOfTheHill,opening,puzzle,racingKings,threeCheck)
 VARIANT='bullet,blitz,classical'
+
 CSV_OUT_FILENAME = 'out.csv'
 
 csv_file = open(CSV_OUT_FILENAME, 'w', newline='')
