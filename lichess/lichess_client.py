@@ -1,4 +1,3 @@
-
 import logging
 import os
 import sys
@@ -6,10 +5,67 @@ import time
 import json
 import pprint
 import urllib
+import getopt
 
 _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
 _LOGGING_FILENAME = os.path.join('.', 'LichessClient.log')
+_OUTPUT_FILENAME = 'out'
+
+_GETOPT_SHORT = "l:o:"
+_GETOPT_LONG = ['debug']
+_GETOPT_FUNC = {}
+_GETOPT_USAGE = ''
+
+def add_option(short_option, long_option, has_argument, func, help_str, default_value = None):
+  global _GETOPT_SHORT, _GETOPT_LONG,  _GETOPT_FUNC, _GETOPT_USAGE
+  name = ''
+  if len(short_option) == 1:
+    _GETOPT_SHORT += short_option
+    if has_argument: _GETOPT_SHORT += ':'
+    name = '-' + short_option
+    _GETOPT_FUNC[name] = func
+  if len(long_option) > 0:
+    e = ''
+    if has_argument: e = '='
+    _GETOPT_LONG.append(long_option + e)
+    if len(name) > 0: name += '/'
+    else: name += ' ' * 3
+    name += '--' + long_option
+    _GETOPT_FUNC['--' + long_option] = func
+  if isinstance(default_value, str): help_str += ". Default value is '" + default_value + "'."
+  _GETOPT_USAGE += name + '\t' + help_str + '\n'
+
+def _init_module_options():
+  def set_log_filename(value):
+    global _LOGGING_FILENAME
+    _LOGGING_FILENAME = value
+  def set_output_filename(value):
+    global _OUTPUT_FILENAME
+    _OUTPUT_FILENAME = value
+  def enable_debug(value):
+    global _LOGGING_LEVEL
+    _LOGGING_LEVEL = loggging.DEBUG
+  def usage(value):
+    sys.stdout.write(_GETOPT_USAGE)
+    sys.exit(2)
+  add_option('h', 'help', False, usage, 'print help')
+  add_option('o', 'output', True, set_output_filename, 'sets output file', _OUTPUT_FILENAME)
+  add_option('l', 'logfile', True, set_log_filename, 'sets log file', _LOGGING_FILENAME)
+  add_option('', 'debug', False, enable_debug, 'enables debug logging')
+
+def _parse_options(opts, args):
+  if len(args) > 0:
+    _GETOPT_FUNC['-h'](None)
+    sys.stderr.write('Unparsed args ' + str(args) + '\n')
+    sys.exit(1)
+  for option, value in opts:
+    func = _GETOPT_FUNC.get(option)
+    if func == None:
+      _GETOPT_FUNC['-h'](None)
+      sys.stderr.write('Unknown option ' + option + '\n')
+      sys.exit(1)
+    func(value)
 
 def _cache_dir_init():
   if not os.path.lexists(_CACHE_DIR):
@@ -23,8 +79,11 @@ def _logging_init():
   console.setFormatter(formatter)
   logging.getLogger('').addHandler(console)
 
-def _module_init():
+def init():
   global _NEXT_QUERY_TIME, _QUERIES, _RECV_QUERIES, _RECV_BYTES
+  _init_module_options()
+  opts, args = getopt.getopt(sys.argv[1:], _GETOPT_SHORT, _GETOPT_LONG)
+  _parse_options(opts, args)
   _logging_init()
   _cache_dir_init()
   _NEXT_QUERY_TIME = time.time()
@@ -58,8 +117,6 @@ def _send_query(url):
 
 def perform_query(query):
   global _QUERIES, _RECV_QUERIES, _RECV_BYTES
-  if not ('_QUERIES' in globals()):
-    _module_init()
   url = 'http://en.lichess.org/api/' + query
   logging.info('Query: ' + url)
   sha512 = _url_sha512(url)
@@ -82,6 +139,8 @@ def perform_query(query):
   logging.debug('Received:\n' + pprint.pformat(j, indent=2))
   _QUERIES += 1
   return j
+
+def get_output_filename(): return _OUTPUT_FILENAME
 
 def stats():
   logging.info('Received {0} bytes.'.format(_RECV_BYTES))

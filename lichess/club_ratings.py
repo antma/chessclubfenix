@@ -3,16 +3,28 @@
 import lichess_client
 import logging
 import csv
+import sys
 
 #Chess Club Phoenix
 TEAM='mXKFB7l2'
 NB=50
+ALL_VARIANTS = set('antichess,atomic,blitz,bullet,chess960,classical,correspondence,crazyhouse,horde,kingOfTheHill,opening,puzzle,racingKings,threeCheck'.split(','))
 #VARIANT - comma separated list (antichess,atomic,blitz,bullet,chess960,classical,correspondence,crazyhouse,horde,kingOfTheHill,opening,puzzle,racingKings,threeCheck)
 VARIANT='bullet,blitz,classical'
 
-CSV_OUT_FILENAME = 'out.csv'
+def parse_variants(value):
+  global VARIANT
+  a = value.split(',')
+  for v in a:
+    if not (v in ALL_VARIANTS):
+      sys.stderr.write("Unknown variant name '" + v + "'\n")
+      sys.stderr.write("List of known lichess variants: " + ', '.join(sorted(ALL_VARIANTS)) + '\n')
+      sys.exit(1)
+  VARIANT = value
 
-csv_file = open(CSV_OUT_FILENAME, 'w', newline='')
+lichess_client.add_option('v', 'variants', True, parse_variants, "sets comma separated list of extracted variants ratings", VARIANT)
+lichess_client.init()
+csv_file = open(lichess_client.get_output_filename(), 'w', newline='')
 writer = csv.writer(csv_file)
 variants = VARIANT.split(',')
 page = 1
