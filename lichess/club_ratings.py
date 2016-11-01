@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 #!/usr/bin/python3
 
 import lichess_client

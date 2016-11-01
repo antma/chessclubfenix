@@ -1,3 +1,4 @@
+# -*- coding: utf8 -*-
 import logging
 import os
 import sys
@@ -5,6 +6,7 @@ import time
 import json
 import pprint
 import urllib
+import urllib.request
 import getopt
 
 _CACHE_DIR = os.path.join('.', '.cache')
@@ -45,7 +47,7 @@ def _init_module_options():
     _OUTPUT_FILENAME = value
   def enable_debug(value):
     global _LOGGING_LEVEL
-    _LOGGING_LEVEL = loggging.DEBUG
+    _LOGGING_LEVEL = logging.DEBUG
   def usage(value):
     sys.stdout.write(_GETOPT_USAGE)
     sys.exit(2)
@@ -105,7 +107,14 @@ def _send_query(url):
     logging.debug('Sleep {0:.3f} seconds'.format(st))
     time.sleep(st)
   logging.debug('Sending query ' + url)
-  response = urllib.request.urlopen(url)
+  try:
+     response = urllib.request.urlopen(url)
+  except urllib.error.HTTPError as err:
+    if err.code == 429:
+      logging.warn('429 error was received. Waiting full minute.')
+      _NEXT_QUERY_TIME = time.time() + 60.5
+      return None
+    else: raise
   code = response.getcode()
   logging.debug('{0} status was received.'.format(code))
   if code == 429:
@@ -123,16 +132,18 @@ def perform_query(query):
   cache_filename = os.path.join(_CACHE_DIR, sha512)
   if not os.path.lexists(cache_filename):
     logging.info('Creating ' + cache_filename)
-    f = open(cache_filename, 'wb')
+    f = open(cache_filename, 'w', encoding = 'utf-8')
     response = None
     while response == None:
       response = _send_query(url)
-    s = response.read()
+    charset = response.headers.get_content_charset()
+    logging.debug('Response charset is ' + charset)
+    s = response.read().decode(charset)
     f.write(s)
     f.close()
     _RECV_QUERIES += 1
     _RECV_BYTES += len(s)
-  f = open(cache_filename, 'r')
+  f = open(cache_filename, 'r', encoding = 'utf-8')
   s = f.read()
   f.close()
   j = json.loads(s)
