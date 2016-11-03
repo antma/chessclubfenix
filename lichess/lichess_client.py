@@ -8,6 +8,10 @@ import pprint
 import urllib
 import urllib.request
 import getopt
+import pickle
+import glob
+import email
+import email.utils
 
 _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
@@ -81,6 +85,36 @@ def _logging_init():
   console.setFormatter(formatter)
   logging.getLogger('').addHandler(console)
 
+class _CacheFileInfo:
+  def __init__(self, info_path):
+    self.path = info_path[:-5]
+    f = open(info_path, 'rb')
+    self.url = pickle.load(f)
+    self.headers = pickle.load(f)
+    f.close()
+  def expired(self):
+    expired_date = self.headers.get('Expires')
+    if isinstance(expired_date, str):
+      logging.debug(self.path + ' expired at ' + expired_date)
+      date_tuple = email.utils.parsedate_tz(expired_date)
+      if date_tuple:
+        et = email.utils.mktime_tz(date_tuple)
+        ct = time.time()
+        if et >= ct:
+          logging.debug('Valid ' + str(et - ct) + ' seconds.')
+          return False
+    return True
+
+def _rescan_cache():
+  for fn in glob.glob(os.path.join(_CACHE_DIR, '*.info')):
+    logging.debug('Found cache file ' + fn)
+    cfi = _CacheFileInfo(fn)
+    if cfi.expired():
+      logging.info(cfi.url + ' was expired.')
+      logging.info('Removing ' + cfi.path)
+      if os.path.lexists(cfi.path): os.unlink(cfi.path)
+      if os.path.lexists(fn): os.unlink(fn)
+
 def init():
   global _NEXT_QUERY_TIME, _QUERIES, _RECV_QUERIES, _RECV_BYTES
   _init_module_options()
@@ -88,6 +122,7 @@ def init():
   _parse_options(opts, args)
   _logging_init()
   _cache_dir_init()
+  _rescan_cache()
   _NEXT_QUERY_TIME = time.time()
   _QUERIES = _RECV_QUERIES = _RECV_BYTES = 0
 
@@ -108,7 +143,8 @@ def _send_query(url):
     time.sleep(st)
   logging.debug('Sending query ' + url)
   try:
-     response = urllib.request.urlopen(url)
+     req = urllib.request.Request(url)
+     response = urllib.request.urlopen(req)
   except urllib.error.HTTPError as err:
     if err.code == 429:
       logging.warn('429 error was received. Waiting full minute.')
@@ -127,22 +163,32 @@ def _send_query(url):
 def perform_query(query):
   global _QUERIES, _RECV_QUERIES, _RECV_BYTES
   url = 'http://en.lichess.org/api/' + query
-  logging.info('Query: ' + url)
   sha512 = _url_sha512(url)
   cache_filename = os.path.join(_CACHE_DIR, sha512)
   if not os.path.lexists(cache_filename):
-    logging.info('Creating ' + cache_filename)
-    f = open(cache_filename, 'w', encoding = 'utf-8')
+    logging.info('Query: ' + url)
     response = None
     while response == None:
       response = _send_query(url)
-    charset = response.headers.get_content_charset()
+    headers = response.headers
+    charset = headers.get_content_charset()
+    logging.debug(headers)
     logging.debug('Response charset is ' + charset)
-    s = response.read().decode(charset)
+    f = open(cache_filename + '.info', 'wb')
+    pickle.dump(url, f)
+    pickle.dump(response.headers, f)
+    f.close()
+    logging.info('Creating ' + cache_filename)
+    f = open(cache_filename, 'w', encoding = 'utf-8')
+    s = response.read()
+    response.close()
+    _RECV_QUERIES += 1
+    _RECV_BYTES += len(headers) + len(s)
+    s = s.decode(charset)
     f.write(s)
     f.close()
-    _RECV_QUERIES += 1
-    _RECV_BYTES += len(s)
+  else:
+    logging.info('Use cached copy for query ' + url)
   f = open(cache_filename, 'r', encoding = 'utf-8')
   s = f.read()
   f.close()
