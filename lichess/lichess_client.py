@@ -1,17 +1,19 @@
 # -*- coding: utf8 -*-
-import logging
-import os
-import sys
-import time
-import json
-import pprint
-import urllib
-import urllib.request
-import getopt
-import pickle
-import glob
+
 import email
 import email.utils
+import getopt
+import glob
+import gzip
+import json
+import logging
+import os
+import pickle
+import pprint
+import sys
+import time
+import urllib
+import urllib.request
 
 _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
@@ -86,9 +88,10 @@ def _logging_init():
   logging.getLogger('').addHandler(console)
 
 class _CacheFileInfo:
-  def __init__(self, info_path):
-    self.path = info_path[:-5]
-    f = open(info_path, 'rb')
+  def __init__(self, path):
+    self.path = path
+    self.info_path = path + '.info'
+    f = open(self.info_path, 'rb')
     self.url = pickle.load(f)
     self.headers = pickle.load(f)
     f.close()
@@ -108,7 +111,7 @@ class _CacheFileInfo:
 def _rescan_cache():
   for fn in glob.glob(os.path.join(_CACHE_DIR, '*.info')):
     logging.debug('Found cache file ' + fn)
-    cfi = _CacheFileInfo(fn)
+    cfi = _CacheFileInfo(fn[:-5])
     if cfi.expired():
       logging.info(cfi.url + ' was expired.')
       logging.info('Removing ' + cfi.path)
@@ -144,6 +147,7 @@ def _send_query(url):
   logging.debug('Sending query ' + url)
   try:
      req = urllib.request.Request(url)
+     req.add_header('Accept-Encoding', 'gzip')
      response = urllib.request.urlopen(req)
   except urllib.error.HTTPError as err:
     if err.code == 429:
@@ -170,30 +174,34 @@ def perform_query(query):
     response = None
     while response == None:
       response = _send_query(url)
-    headers = response.headers
-    charset = headers.get_content_charset()
-    logging.debug(headers)
-    logging.debug('Response charset is ' + charset)
     f = open(cache_filename + '.info', 'wb')
     pickle.dump(url, f)
     pickle.dump(response.headers, f)
     f.close()
     logging.info('Creating ' + cache_filename)
-    f = open(cache_filename, 'w', encoding = 'utf-8')
+    f = open(cache_filename, 'wb')
     s = response.read()
     response.close()
     _RECV_QUERIES += 1
-    _RECV_BYTES += len(headers) + len(s)
-    s = s.decode(charset)
+    _RECV_BYTES += len(response.headers) + len(s)
     f.write(s)
     f.close()
   else:
     logging.info('Use cached copy for query ' + url)
-  f = open(cache_filename, 'r', encoding = 'utf-8')
+  cbf = _CacheFileInfo(cache_filename)
+  logging.debug(cbf.headers)
+  f = open(cache_filename, 'rb')
   s = f.read()
   f.close()
+  if cbf.headers.get('Content-Encoding') == 'gzip':
+    compressed_size = len(s)
+    s = gzip.decompress(s)
+    logging.debug('{0} compressed ratio = {1:.3f}%'.format(cbf.url, (100.0 * compressed_size) / len(s)))
+  charset = cbf.headers.get_content_charset()
+  logging.debug('Response charset is ' + charset)
+  s = s.decode(charset)
   j = json.loads(s)
-  logging.debug('Received:\n' + pprint.pformat(j, indent=2))
+  logging.debug('Parsed JSON:\n' + pprint.pformat(j, indent=2))
   _QUERIES += 1
   return j
 
