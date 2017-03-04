@@ -23,7 +23,12 @@ def parse_variants(value):
       sys.exit(1)
   VARIANT = value
 
+def sandbox(value):
+  global TEAM
+  TEAM = 'bMJJlIcV'
+
 lichess_client.add_option('v', 'variants', True, parse_variants, "sets comma separated list of extracted variants ratings", VARIANT)
+lichess_client.add_option('', 'sandbox', False, sandbox, 'Песочница')
 lichess_client.init()
 csv_file = open(lichess_client.get_output_filename(), 'w', newline='')
 writer = csv.writer(csv_file)
@@ -38,6 +43,15 @@ while True:
     row.append(u['username'])
     logging.debug(u['username'])
     perfs = u['perfs']
+    engine = u.get('engine', False)
+    eliminate = 'Eliminating this player from rating list.'
+    if engine:
+      logging.info('{0} uses chess computer assistance. {1}'.format(u['username'], eliminate))
+      continue
+    booster = u.get('booster', False)
+    if booster:
+      logging.info('{0} artificially increases/decreases their rating. {1}'.format(u['username'], eliminate))
+      continue
     for v in variants:
       rat = perfs[v]
       rate = 0
