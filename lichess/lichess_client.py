@@ -68,7 +68,7 @@ def _init_module_options():
   add_option('o', 'output', True, set_output_filename, 'sets output file', _OUTPUT_FILENAME)
   add_option('l', 'logfile', True, set_log_filename, 'sets log file', _LOGGING_FILENAME)
   add_option('', 'debug', False, enable_debug, 'enables debug logging')
-  add_option('d', 'delay', True, set_delay, 'sets delay between queries', _QUERIES_DELAY)
+  add_option('d', 'delay', True, set_delay, 'sets delay between queries', str(_QUERIES_DELAY))
 
 def _parse_options(opts, args):
   if len(args) > 0:
