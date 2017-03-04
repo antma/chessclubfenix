@@ -19,6 +19,7 @@ _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
 _LOGGING_FILENAME = os.path.join('.', 'LichessClient.log')
 _OUTPUT_FILENAME = 'out'
+_QUERIES_DELAY = 2.0
 
 _GETOPT_SHORT = "l:o:"
 _GETOPT_LONG = ['debug']
@@ -54,6 +55,12 @@ def _init_module_options():
   def enable_debug(value):
     global _LOGGING_LEVEL
     _LOGGING_LEVEL = logging.DEBUG
+  def set_delay(value):
+    global _QUERIES_DELAY
+    _QUERIES_DELAY = float(value)
+    if _QUERIES_DELAY < 1.0:
+      sys.stdout.write('Delay is too small (must be at least one second)\n')
+      usage(value)
   def usage(value):
     sys.stdout.write(_GETOPT_USAGE)
     sys.exit(2)
@@ -61,6 +68,7 @@ def _init_module_options():
   add_option('o', 'output', True, set_output_filename, 'sets output file', _OUTPUT_FILENAME)
   add_option('l', 'logfile', True, set_log_filename, 'sets log file', _LOGGING_FILENAME)
   add_option('', 'debug', False, enable_debug, 'enables debug logging')
+  add_option('d', 'delay', True, set_delay, 'sets delay between queries', _QUERIES_DELAY)
 
 def _parse_options(opts, args):
   if len(args) > 0:
@@ -152,16 +160,16 @@ def _send_query(url):
   except urllib.error.HTTPError as err:
     if err.code == 429:
       logging.warn('429 error was received. Waiting full minute.')
-      _NEXT_QUERY_TIME = time.time() + 60.5
+      _NEXT_QUERY_TIME = time.time() + 60.0 * 1.05
       return None
     else: raise
   code = response.getcode()
   logging.debug('{0} status was received.'.format(code))
   if code == 429:
     logging.warn('429 status was received. Waiting full minute.')
-    _NEXT_QUERY_TIME = time.time() + 60.5
+    _NEXT_QUERY_TIME = time.time() + 60.0 * 1.05
     return None
-  _NEXT_QUERY_TIME = time.time() + 1.1
+  _NEXT_QUERY_TIME = time.time() + _QUERIES_DELAY * 1.05
   return response
 
 def perform_query(query):
