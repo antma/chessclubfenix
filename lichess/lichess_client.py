@@ -14,8 +14,6 @@ import pprint
 import sys
 import time
 import http.client
-#import urllib
-#import urllib.request
 
 _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
@@ -111,7 +109,6 @@ class _CacheFileInfo:
     self.expires = pickle.load(f)
     f.close()
   def expired(self):
-    #expired_date = self.headers.get('Expires')
     if isinstance(self.expires, str):
       logging.debug(self.path + ' expired at ' + self.expires)
       date_tuple = email.utils.parsedate_tz(self.expires)
@@ -179,7 +176,6 @@ def _send_query(query):
 
 def perform_query(query):
   global _QUERIES, _RECV_QUERIES, _RECV_BYTES, _NEXT_QUERY_TIME
-  #url = 'http://en.lichess.org/api/' + query
   sha512 = _query_sha512(query)
   cache_filename = os.path.join(_CACHE_DIR, sha512)
   if not os.path.lexists(cache_filename):
