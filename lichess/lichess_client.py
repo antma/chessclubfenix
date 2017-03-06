@@ -1,5 +1,6 @@
 # -*- coding: utf8 -*-
 
+import cgi
 import email
 import email.utils
 import getopt
@@ -12,14 +13,17 @@ import pickle
 import pprint
 import sys
 import time
-import urllib
-import urllib.request
+import http.client
+#import urllib
+#import urllib.request
 
 _CACHE_DIR = os.path.join('.', '.cache')
 _LOGGING_LEVEL = logging.INFO
 _LOGGING_FILENAME = os.path.join('.', 'LichessClient.log')
 _OUTPUT_FILENAME = 'out'
 _QUERIES_DELAY = 2.0
+_HTTP_CONNECTION = None
+_LICHESS_SERVER = 'en.lichess.org'
 
 _GETOPT_SHORT = "l:o:"
 _GETOPT_LONG = ['debug']
@@ -100,14 +104,17 @@ class _CacheFileInfo:
     self.path = path
     self.info_path = path + '.info'
     f = open(self.info_path, 'rb')
-    self.url = pickle.load(f)
+    self.query = pickle.load(f)
     self.headers = pickle.load(f)
+    self.content_type = pickle.load(f)
+    self.content_encoding = pickle.load(f)
+    self.expires = pickle.load(f)
     f.close()
   def expired(self):
-    expired_date = self.headers.get('Expires')
-    if isinstance(expired_date, str):
-      logging.debug(self.path + ' expired at ' + expired_date)
-      date_tuple = email.utils.parsedate_tz(expired_date)
+    #expired_date = self.headers.get('Expires')
+    if isinstance(self.expires, str):
+      logging.debug(self.path + ' expired at ' + self.expires)
+      date_tuple = email.utils.parsedate_tz(self.expires)
       if date_tuple:
         et = email.utils.mktime_tz(date_tuple)
         ct = time.time()
@@ -121,7 +128,7 @@ def _rescan_cache():
     logging.debug('Found cache file ' + fn)
     cfi = _CacheFileInfo(fn[:-5])
     if cfi.expired():
-      logging.info(cfi.url + ' was expired.')
+      logging.info(cfi.query + ' was expired.')
       logging.info('Removing ' + cfi.path)
       if os.path.lexists(cfi.path): os.unlink(cfi.path)
       if os.path.lexists(fn): os.unlink(fn)
@@ -137,14 +144,14 @@ def init():
   _NEXT_QUERY_TIME = time.time()
   _QUERIES = _RECV_QUERIES = _RECV_BYTES = 0
 
-def _url_sha512(url):
+def _query_sha512(query):
   import hashlib
   m = hashlib.sha512()
-  m.update(url.encode('ascii'))
+  m.update(query.encode('ascii'))
   return m.hexdigest()
 
-def _send_query(url):
-  global _NEXT_QUERY_TIME
+def _send_query(query):
+  global _NEXT_QUERY_TIME, _HTTP_CONNECTION
   # To respect the API servers and avoid an IP ban, please wait 1 second between requests.
   # If you receive an HTTP response with a 429 status, please wait a full minute before resuming API usage.
   t = time.time()
@@ -152,39 +159,40 @@ def _send_query(url):
     st = _NEXT_QUERY_TIME - t
     logging.debug('Sleep {0:.3f} seconds'.format(st))
     time.sleep(st)
-  logging.debug('Sending query ' + url)
-  try:
-     req = urllib.request.Request(url)
-     req.add_header('Accept-Encoding', 'gzip')
-     response = urllib.request.urlopen(req)
-  except urllib.error.HTTPError as err:
-    if err.code == 429:
-      logging.warn('429 error was received. Waiting full minute.')
-      _NEXT_QUERY_TIME = time.time() + 61.0
-      return None
-    else: raise
-  code = response.getcode()
-  logging.debug('{0} status was received.'.format(code))
-  if code == 429:
-    logging.warn('429 status was received. Waiting full minute.')
+  if _HTTP_CONNECTION == None:
+    logging.debug('Connect to server {0}'.format(_LICHESS_SERVER))
+    _HTTP_CONNECTION = http.client.HTTPConnection(_LICHESS_SERVER, 80)
+    assert(_HTTP_CONNECTION != None)
+  logging.debug('Sending query ' + query)
+  _HTTP_CONNECTION.request('GET', '/api/' + query, None, { 'Accept-Encoding' : 'gzip', "Connection" : "keep-alive" })
+  response = _HTTP_CONNECTION.getresponse()
+  if response.status == 429:
+    logging.warn('429 error was received. Waiting full minute.')
     _NEXT_QUERY_TIME = time.time() + 61.0
+    _HTTP_CONNECTION.close()
+    _HTTP_CONNECTION = None
     return None
-  _NEXT_QUERY_TIME = time.time() + _QUERIES_DELAY
+  if response.status != 200:
+    logging.error('Expected 200 status, but {1} status was received. {1}'.format(response.status, response.reason))
+    sys.exit(1)
   return response
 
 def perform_query(query):
   global _QUERIES, _RECV_QUERIES, _RECV_BYTES, _NEXT_QUERY_TIME
-  url = 'http://en.lichess.org/api/' + query
-  sha512 = _url_sha512(url)
+  #url = 'http://en.lichess.org/api/' + query
+  sha512 = _query_sha512(query)
   cache_filename = os.path.join(_CACHE_DIR, sha512)
   if not os.path.lexists(cache_filename):
-    logging.info('Query: ' + url)
+    logging.info('Query: ' + query)
     response = None
     while response == None:
-      response = _send_query(url)
+      response = _send_query(query)
     f = open(cache_filename + '.info', 'wb')
-    pickle.dump(url, f)
-    pickle.dump(response.headers, f)
+    pickle.dump(query, f)
+    pickle.dump(response.getheaders(), f)
+    pickle.dump(response.getheader('Content-Type'), f)
+    pickle.dump(response.getheader('Content-Encoding'), f)
+    pickle.dump(response.getheader('Expires'), f)
     f.close()
     logging.info('Creating ' + cache_filename)
     f = open(cache_filename, 'wb')
@@ -196,17 +204,18 @@ def perform_query(query):
     f.write(s)
     f.close()
   else:
-    logging.info('Use cached copy for query ' + url)
+    logging.info('Use cached copy for query ' + query)
   cbf = _CacheFileInfo(cache_filename)
   logging.debug(cbf.headers)
   f = open(cache_filename, 'rb')
   s = f.read()
   f.close()
-  if cbf.headers.get('Content-Encoding') == 'gzip':
+  if cbf.content_encoding == 'gzip':
     compressed_size = len(s)
     s = gzip.decompress(s)
-    logging.debug('{0} compressed ratio = {1:.3f}%'.format(cbf.url, (100.0 * compressed_size) / len(s)))
-  charset = cbf.headers.get_content_charset()
+    logging.debug('{0} compressed ratio = {1:.3f}%'.format(cbf.query, (100.0 * compressed_size) / len(s)))
+  _, params = cgi.parse_header(cbf.content_type)
+  charset = params['charset']
   logging.debug('Response charset is ' + charset)
   s = s.decode(charset)
   j = json.loads(s)
