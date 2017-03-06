@@ -160,20 +160,20 @@ def _send_query(url):
   except urllib.error.HTTPError as err:
     if err.code == 429:
       logging.warn('429 error was received. Waiting full minute.')
-      _NEXT_QUERY_TIME = time.time() + 60.0 * 1.05
+      _NEXT_QUERY_TIME = time.time() + 61.0
       return None
     else: raise
   code = response.getcode()
   logging.debug('{0} status was received.'.format(code))
   if code == 429:
     logging.warn('429 status was received. Waiting full minute.')
-    _NEXT_QUERY_TIME = time.time() + 60.0 * 1.05
+    _NEXT_QUERY_TIME = time.time() + 61.0
     return None
-  _NEXT_QUERY_TIME = time.time() + _QUERIES_DELAY * 1.05
+  _NEXT_QUERY_TIME = time.time() + _QUERIES_DELAY
   return response
 
 def perform_query(query):
-  global _QUERIES, _RECV_QUERIES, _RECV_BYTES
+  global _QUERIES, _RECV_QUERIES, _RECV_BYTES, _NEXT_QUERY_TIME
   url = 'http://en.lichess.org/api/' + query
   sha512 = _url_sha512(url)
   cache_filename = os.path.join(_CACHE_DIR, sha512)
@@ -190,6 +190,7 @@ def perform_query(query):
     f = open(cache_filename, 'wb')
     s = response.read()
     response.close()
+    _NEXT_QUERY_TIME = max(_NEXT_QUERY_TIME, time.time() + _QUERIES_DELAY)
     _RECV_QUERIES += 1
     _RECV_BYTES += len(response.headers) + len(s)
     f.write(s)
