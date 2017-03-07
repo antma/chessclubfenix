@@ -13,6 +13,10 @@ ALL_VARIANTS = set('antichess,atomic,blitz,bullet,chess960,classical,corresponde
 #VARIANT - comma separated list (antichess,atomic,blitz,bullet,chess960,classical,correspondence,crazyhouse,horde,kingOfTheHill,opening,puzzle,racingKings,threeCheck)
 VARIANT='bullet,blitz,classical'
 
+def parse_nb(value):
+  global NB
+  NB = int(value)
+
 def parse_variants(value):
   global VARIANT
   a = value.split(',')
@@ -27,6 +31,7 @@ def sandbox(value):
   global TEAM
   TEAM = 'bMJJlIcV'
 
+lichess_client.add_option('n', 'nb', True, parse_nb, "sets number of users per API query", str(NB))
 lichess_client.add_option('v', 'variants', True, parse_variants, "sets comma separated list of extracted variants ratings", VARIANT)
 lichess_client.add_option('', 'sandbox', False, sandbox, 'Песочница')
 lichess_client.init()
