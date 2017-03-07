@@ -164,8 +164,8 @@ def _send_query(query):
   _HTTP_CONNECTION.request('GET', '/api/' + query, None, { 'Accept-Encoding' : 'gzip', "Connection" : "keep-alive" })
   response = _HTTP_CONNECTION.getresponse()
   if response.status == 429:
-    logging.warn('429 error was received. Waiting full minute.')
-    _NEXT_QUERY_TIME = time.time() + 61.0
+    logging.warn('429 error was received. Waiting 2 minutes.')
+    _NEXT_QUERY_TIME = time.time() + 120.0
     _HTTP_CONNECTION.close()
     _HTTP_CONNECTION = None
     return None
